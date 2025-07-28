@@ -57,10 +57,11 @@ def render_chat():
                 st.markdown(answer)
                 
                 # Show sources in an expander
-                if sources:
+                if sources and any(src.strip() for src in sources):  # Only show if sources exist and are not empty
                     with st.expander("📚 View Sources"):
                         for i, src in enumerate(sources, 1):
-                            st.markdown(f"**{i}.** `{src}`")
+                            if src.strip():  # Only show non-empty sources
+                                st.markdown(f"**{i}.** `{src}`")
                 
                 st.session_state.messages.append({
                     "role": "assistant", 

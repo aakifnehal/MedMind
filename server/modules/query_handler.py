@@ -6,11 +6,12 @@ def query_chain(chain, user_input:str):
         result = chain({"query": user_input})
         response = {
              "response": result["result"],
-             "sources":[doc.metadata.get("sources", "") for doc in result["source_documents"]]
+             "sources": [doc.metadata.get("source", "") for doc in result["source_documents"]]
         }
         logger.debug(f"Chain result: {response}")
         return response
     
     except Exception as e:
-            logger.exception("Error during query chain execution")
+        logger.exception("Error during query chain execution")
+        return {"response": "An error occurred while processing your question.", "sources": []}
         

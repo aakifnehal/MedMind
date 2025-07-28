@@ -10,6 +10,9 @@ from pydantic import Field
 from typing import List, Optional
 from logger import logger
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 router=APIRouter()
 
@@ -19,18 +22,36 @@ async def ask_question(question: str = Form(...)):
         logger.info(f"user query: {question}")
 
         # Embed model + Pinecone setup
-        pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-        index = pc.Index(os.environ["PINECONE_INDEX_NAME"])
+        PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+        PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "medmind-index")
+        
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        index = pc.Index(PINECONE_INDEX_NAME)
         embed_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        
         embedded_query = embed_model.embed_query(question)
         res = index.query(vector=embedded_query, top_k=3, include_metadata=True)
 
-        docs = [
-            Document(
-                page_content=match["metadata"].get("text", ""),
-                metadata=match["metadata"]
-            ) for match in res["matches"]
-        ]
+        logger.debug(f"Pinecone query results: {len(res['matches'])} matches found")
+        
+        docs = []
+        for match in res["matches"]:
+            # Get text from metadata where we stored it
+            text_content = match["metadata"].get("text", "")
+            if text_content:  # Only add docs with actual content
+                doc = Document(
+                    page_content=text_content,
+                    metadata=match["metadata"]
+                )
+                docs.append(doc)
+        
+        logger.debug(f"Created {len(docs)} documents for retrieval")
+        
+        if not docs:
+            return {
+                "response": "I couldn't find any relevant information in the uploaded documents. Please make sure documents are uploaded and processed correctly.",
+                "sources": []
+            }
 
         class SimpleRetriever(BaseRetriever):
             tags: Optional[List[str]] = Field(default_factory=list)

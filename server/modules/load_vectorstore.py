@@ -13,7 +13,7 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_ENV = "us-east-1"
-PINECONE_INDEX_NAME = "medmind-index"
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "medmind-index")
 
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
@@ -43,36 +43,52 @@ index = pc.Index(PINECONE_INDEX_NAME)
 
 def load_vectorstore(uploaded_files):
     embed_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    file_path = []
+    file_paths = []
 
     # 1. Upload
     for file in uploaded_files:
         save_path = Path(UPLOAD_DIR)/file.filename
         with open(save_path, "wb") as f:
             f.write(file.file.read())
-        file_path.append(str(save_path))
+        file_paths.append(str(save_path))
+        print(f"Saved file: {save_path}")
 
     # 2. Load and Split
-    for file_path in file_path:
+    for file_path in file_paths:
+        print(f"Processing file: {file_path}")
         loader = PyPDFLoader(file_path)
         documents = loader.load()
+        print(f"Loaded {len(documents)} pages from {file_path}")
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
         chunks = splitter.split_documents(documents)
+        print(f"Split into {len(chunks)} chunks")
 
         # for showing the chunks to the user
         texts = [chunk.page_content for chunk in chunks]
-        metadata = [chunk.metadata for chunk in chunks]
+        
+        # Create metadata with text content and source info
+        metadata = []
+        for i, chunk in enumerate(chunks):
+            meta = chunk.metadata.copy()
+            meta["text"] = chunk.page_content  # Store the actual text content
+            meta["source"] = Path(file_path).name  # Store the filename as source
+            meta["chunk_id"] = i
+            metadata.append(meta)
+            
         ids = [f"{Path(file_path).stem}-{i}" for i in range(len(chunks))]
 
         # 3. Embeding
         print(f"Embedding {len(chunks)} chunks from {file_path}...")
         embeddings = embed_model.embed_documents(texts)
+        print(f"Generated {len(embeddings)} embeddings")
 
         # 4. Upserting
         print(f"Upserting {len(chunks)} chunks to Pinecone index...")
         with tqdm(total=len(embeddings), desc="Upserting to Pinecone") as progress:
-            index.upsert(vectors=zip(ids, embeddings, metadata))
+            # Create vectors with proper format: (id, embedding, metadata)
+            vectors = list(zip(ids, embeddings, metadata))
+            index.upsert(vectors=vectors)
             progress.update(len(embeddings))
 
         print(f"Successfully processed {file_path} with {len(chunks)} chunks.")
